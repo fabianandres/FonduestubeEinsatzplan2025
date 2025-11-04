@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Admin – FondueStube</title>
+    <link rel="stylesheet" href="styles.css">
+    <meta name="description" content="Admin UI">
+  </head>
+  <body>
+    <main class="container">
+      <section class="card">
+        <h2>Admin Login</h2>
+        <input id="pw" type="password" placeholder="Passwort" style="width:100%;padding:8px;margin-top:8px;border-radius:8px;border:1px solid #e6e6e6">
+        <div style="margin-top:8px;text-align:right">
+          <button id="login" class="btn primary">Login</button>
+          <a id="oidcLink" href="/auth/login" style="margin-left:8px" class="btn">Login mit Microsoft</a>
+        </div>
+        <div id="admin-area" style="display:none;margin-top:12px">
+          <h3>Einsatz bearbeiten</h3>
+          <div id="shifts"></div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      let csrfToken = null;
+      async function login(){
+        const pw = document.getElementById('pw').value;
+        const r = await fetch('/admin/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({password:pw})});
+        if(!r.ok){ alert('Login fehlgeschlagen'); return; }
+        // fetch events + csrf token
+        const r2 = await fetch('/admin/events');
+        if(!r2.ok){ alert('Zugriff verweigert'); return; }
+        const data = await r2.json();
+        csrfToken = data.csrfToken;
+        // keep a client-side copy so edits can preserve helpers when updating tasks
+        window.adminEvents = data.events || [];
+        document.getElementById('admin-area').style.display = 'block';
+        renderShifts(window.adminEvents);
+      }
+      document.getElementById('login').addEventListener('click', login);
+
+      function renderShifts(events){
+        const container = document.getElementById('shifts');
+        container.innerHTML = '';
+        events.forEach(ev=>{
+          const div = document.createElement('div');
+          div.className = 'card';
+          div.style.marginBottom='8px';
+          div.innerHTML = `
+            <div style="margin-top:6px;font-size:14px" data-summary-for="${ev.id}">&nbsp;</div>
+            <div><strong>${ev.date} ${ev.time}  ${ev.title}</strong></div>
+            <div style="margin-top:8px">Titel: <input data-id="${ev.id}" data-field="title" value="${ev.title||''}" style="padding:6px;border-radius:8px;border:1px solid #e6e6e6;width:60%"></div>
+            <div style="margin-top:8px">Zeit: <input data-id="${ev.id}" data-field="time" value="${ev.time||''}" style="padding:6px;border-radius:8px;border:1px solid #e6e6e6;width:60%"></div>
+            <div style="margin-top:8px;display:flex;gap:8px;align-items:center">Leitung:
+              <input data-id="${ev.id}" data-field="leader" value="${ev.leader||''}" style="padding:6px;border-radius:8px;border:1px solid #e6e6e6;width:60%">
+              <span class="muted" data-status-for="${ev.id}" style="font-size:13px">&nbsp;</span>
+            </div>
+            <div style="margin-top:8px">Aufgaben:</div>
+            <div data-tasks-for="${ev.id}" style="margin-top:6px">
+              ${ev.tasks.map((t,i)=>`
+                <div style=\"display:flex;gap:8px;align-items:center;margin-bottom:6px\">
+                  <input data-task-id=\"${ev.id}\" data-task-idx=\"${i}\" data-field=\"task-name\" value=\"${t.name}\" style=\"padding:6px;border-radius:8px;border:1px solid #e6e6e6;width:45%\">
+                  <input data-task-id=\"${ev.id}\" data-task-idx=\"${i}\" data-field=\"task-required\" type=\"number\" min=\"0\" value=\"${t.required}\" style=\"width:80px;padding:6px;border-radius:8px;border:1px solid #e6e6e6\">
+                </div>
+              `).join('')}
+            </div>
+          `;
+          container.appendChild(div);
+        });
+        // Debounced autosave for various inputs (title, time, leader, tasks)
+        const timers = {};
+          // update all summaries initially
+          function updateSummaryFor(id){
+            const ev = window.adminEvents.find(e=>e.id===id);
+            const el = container.querySelector(`[data-summary-for="${id}"]`);
+            if(!el) return;
+            if(!ev || !ev.tasks){ el.textContent = '' ; return; }
+            const required = ev.tasks.reduce((s,t)=>s + (Number(t.required)||0), 0);
+            const assigned = ev.tasks.reduce((s,t)=>s + (t.helpers ? t.helpers.length : 0), 0);
+            const open = Math.max(0, required - assigned);
+            el.textContent = `Benötigt: ${required} — Vergeben: ${assigned} — Offen: ${open}`;
+          }
+          window.adminEvents.forEach(e=> updateSummaryFor(e.id));
+
+        function doSave(id, payload, statusEl, key){
+          if(timers[key]) clearTimeout(timers[key]);
+          timers[key] = setTimeout(async ()=>{
+            statusEl.textContent = 'Änderung...';
+            try{
+              const r = await fetch(`/admin/events/${id}`,{method:'PUT',headers:{'content-type':'application/json','csrf-token':csrfToken},body:JSON.stringify(payload)});
+              if(!r.ok){ statusEl.textContent = 'Fehler'; return; }
+              const j = await r.json();
+              // update local copy so future edits preserve helpers
+              const idx = window.adminEvents.findIndex(e=>e.id===id);
+              if(idx!==-1 && j.event) window.adminEvents[idx] = j.event;
+              // refresh summary for this event
+              try{ updateSummaryFor(id); }catch(e){}
+              statusEl.textContent = 'Gespeichert';
+              setTimeout(()=>{ if(statusEl.textContent==='Gespeichert') statusEl.textContent=''; },2000);
+            }catch(e){ statusEl.textContent = 'Netzwerkfehler'; }
+          },800);
+        }
+
+        // inputs for title/time/leader
+        container.querySelectorAll('input[data-field="title"], input[data-field="time"], input[data-field="leader"]').forEach(input=>{
+          const id = input.dataset.id;
+          const field = input.dataset.field;
+          const statusEl = container.querySelector(`[data-status-for="${id}"]`);
+          input.addEventListener('input', ()=>{
+            const key = `${id}:${field}`;
+            const payload = {};
+            payload[field] = input.value;
+            doSave(id, payload, statusEl, key);
+          });
+        });
+
+        // inputs for tasks (name + required). When a task field changes we build a tasks array preserving helpers
+        container.querySelectorAll('input[data-field="task-name"], input[data-field="task-required"]').forEach(input=>{
+          const id = input.dataset.taskId;
+          const taskIdx = Number(input.dataset.taskIdx);
+          const statusEl = container.querySelector(`[data-status-for="${id}"]`);
+          input.addEventListener('input', ()=>{
+            const key = `${id}:task:${taskIdx}`;
+            // build updated tasks array based on current DOM values, but preserve helpers from window.adminEvents
+            const current = window.adminEvents.find(e=>e.id===id);
+            const existingTasks = (current && current.tasks) ? current.tasks : [];
+            const taskRows = container.querySelectorAll(`[data-tasks-for="${id}"] > div`);
+            const newTasks = [];
+            // iterate using existingTasks length or DOM rows
+            const rows = taskRows.length ? taskRows : existingTasks.map((t,i)=>null);
+            // instead of relying on rows NodeList length, we'll loop by index using existingTasks.length to keep helpers aligned
+            const count = Math.max(existingTasks.length, taskRows.length);
+            for(let i=0;i<count;i++){
+              const nameInput = container.querySelector(`input[data-task-id="${id}"][data-task-idx="${i}"][data-field="task-name"]`);
+              const reqInput = container.querySelector(`input[data-task-id="${id}"][data-task-idx="${i}"][data-field="task-required"]`);
+              const name = nameInput ? nameInput.value : (existingTasks[i] && existingTasks[i].name) || '';
+              const required = reqInput ? Number(reqInput.value) : (existingTasks[i] && existingTasks[i].required) || 0;
+              const helpers = (existingTasks[i] && existingTasks[i].helpers) ? existingTasks[i].helpers : [];
+              newTasks.push({ name, required, helpers });
+            }
+            doSave(id, { tasks: newTasks }, statusEl, key);
+          });
+        });
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>FondueStube – Einsatzplan Weihnachtsmarkt 2025</title>
+  <link rel="stylesheet" href="styles.css">
+  <meta name="description" content="Einsatzplan der FondueStube am Weihnachtsmarkt 2025 – mobilfreundlich">
+</head>
+<body>
+  <header class="site-header">
+    <div class="brand">
+      <div class="logo">🧀</div>
+      <div>
+        <h1>FondueStube</h1>
+        <p class="subtitle">Einsatzplan Weihnachtsmarkt 2025</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="intro card">
+      <p>Herzlich Willkommen! Tragt euch als Helfer ein oder schaut, wer für welche Schicht verantwortlich ist.</p>
+    </section>
+
+    <section id="summary" class="card" aria-live="polite" style="margin-bottom:12px">
+      <strong id="summary-open">Offene Helferplätze: —</strong>
+      <div id="summary-detail" style="font-size:0.9rem;color:var(--muted)"></div>
+    </section>
+
+    <section id="events" class="events"></section>
+
+    <template id="event-template">
+      <article class="event card">
+        <div class="event-head">
+          <div class="when"></div>
+          <div class="task"></div>
+        </div>
+        <div class="meta">
+          <div class="leader"></div>
+        </div>
+        <div class="tasks-list"></div>
+      </article>
+    </template>
+  </main>
+
+  <!-- Modal sign-up -->
+  <div id="modal" class="modal-backdrop" role="dialog" aria-hidden="true">
+    <div class="modal" role="document">
+      <h3>Eintragen als Helfer</h3>
+      <div style="font-size:0.9rem;color:var(--muted)">Für Aufgabe: <span id="modal-task-name"></span></div>
+      <div class="form-row">
+        <input id="modal-name" type="text" placeholder="Dein Name" aria-label="Name">
+      </div>
+      <div class="modal-actions">
+        <button id="modal-cancel" class="btn">Abbrechen</button>
+        <button id="modal-submit" class="btn primary">Eintragen</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <small>© FondueStube — Weihnachtsmarkt 2025</small>
+  </footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite">Erfolgreich eingetragen</div>
+
+  <script>
+    // Helper: weekday names in German
+    const WEEKDAYS = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
+
+    async function fetchWithFallback(){
+      try{
+        const res = await fetch('/api/events');
+        if(!res.ok) throw new Error('api not available');
+        return await res.json();
+      }catch(_){
+        // fallback to local file
+        const res2 = await fetch('events.json');
+        return await res2.json();
+      }
+    }
+
+    async function loadEvents(){
+      try{
+        const events = await fetchWithFallback();
+        const list = document.getElementById('events');
+        const tpl = document.getElementById('event-template');
+        list.innerHTML = '';
+
+        // compute totals for summary
+        (function updateSummary(){
+          const totalRequired = (events||[]).reduce((sum,ev)=> sum + (ev.tasks||[]).reduce((s,t)=> s + (Number(t.required)||0),0), 0);
+          const totalAssigned = (events||[]).reduce((sum,ev)=> sum + (ev.tasks||[]).reduce((s,t)=> s + ((t.helpers||[]).length),0), 0);
+          const totalOpen = Math.max(0, totalRequired - totalAssigned);
+          const sOpen = document.getElementById('summary-open');
+          const sDetail = document.getElementById('summary-detail');
+          if(sOpen) sOpen.textContent = `Offene Helferplätze: ${totalOpen}`;
+          if(sDetail) sDetail.textContent = `Benötigt: ${totalRequired} — Vergeben: ${totalAssigned}`;
+        })();
+
+        // group by date
+        const byDate = {};
+        (events||[]).forEach(ev => {
+          (byDate[ev.date] = byDate[ev.date] || []).push(ev);
+        });
+
+        // sort dates
+        const dates = Object.keys(byDate).sort();
+
+        dates.forEach(date => {
+          const daySection = document.createElement('section');
+          daySection.className = 'day-group';
+          const d = new Date(date);
+          const header = document.createElement('h2');
+          header.textContent = `${WEEKDAYS[d.getDay()]} — ${date}`;
+          daySection.appendChild(header);
+
+          // each shift
+          byDate[date].forEach(ev => {
+            const node = tpl.content.cloneNode(true);
+            node.querySelector('.when').textContent = ev.time;
+            node.querySelector('.task').textContent = ev.title;
+            node.querySelector('.leader').textContent = 'Leitung: ' + (ev.leader || 'Offen');
+
+            const tasksList = node.querySelector('.tasks-list');
+            tasksList.innerHTML = '';
+            (ev.tasks||[]).forEach((t, idx) => {
+              const div = document.createElement('div');
+              div.className = 'card';
+              const filled = (t.helpers||[]).length;
+              div.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <div><strong>${t.name}</strong></div>
+                  <div>${filled}/${t.required}</div>
+                </div>
+                <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+                  <div class="helpers">${(t.helpers||[]).length ? t.helpers.join(', ') : 'keine Helfer'}</div>
+                  <button class="btn primary" data-taskidx="${idx}">Eintragen</button>
+                </div>
+              `;
+              const btn = div.querySelector('button');
+              btn.addEventListener('click', ()=>{
+                if((t.helpers||[]).length >= t.required){
+                  alert('Diese Aufgabe ist bereits voll');
+                  return;
+                }
+                openSignupModal({event: ev, task: t, taskIdx: idx});
+              });
+              tasksList.appendChild(div);
+            });
+
+            daySection.appendChild(node);
+          });
+
+          list.appendChild(daySection);
+        });
+
+      }catch(e){
+        document.getElementById('events').innerHTML = '<div class="card">Fehler beim Laden der Termine.</div>';
+      }
+    }
+    loadEvents();
+    // Modal logic
+    const modal = document.getElementById('modal');
+    const modalName = document.getElementById('modal-name');
+    const modalTaskName = document.getElementById('modal-task-name');
+    const modalCancel = document.getElementById('modal-cancel');
+    const modalSubmit = document.getElementById('modal-submit');
+    let modalContext = null;
+
+    function openSignupModal(ctx){
+      modalContext = ctx; // {event, task, taskIdx}
+      modalTaskName.textContent = ctx.task.name + ' — ' + ctx.event.time;
+      modalName.value = '';
+      modal.classList.add('show');
+      modal.setAttribute('aria-hidden','false');
+      modalName.focus();
+    }
+
+    function closeSignupModal(){
+      modalContext = null;
+      modal.classList.remove('show');
+      modal.setAttribute('aria-hidden','true');
+    }
+
+    modalCancel.addEventListener('click', ()=>{ closeSignupModal(); });
+    modalSubmit.addEventListener('click', async ()=>{
+      if(!modalContext) return closeSignupModal();
+      const name = modalName.value && modalName.value.trim();
+      if(!name){ alert('Bitte Namen eingeben'); modalName.focus(); return; }
+      const ev = modalContext.event;
+      const idx = modalContext.taskIdx;
+      const t = modalContext.task;
+      // disable while in-flight
+      modalSubmit.disabled = true;
+      modalCancel.disabled = true;
+      try{
+        const r = await fetch(`/api/events/${ev.id}/tasks/${idx}/claim`, {
+          method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({name})
+        });
+        if(!r.ok){ const err = await r.json().catch(()=>({error:'unknown'})); alert('Fehler: '+(err.error||r.statusText)); return; }
+        closeSignupModal();
+        showToast('Erfolgreich eingetragen');
+        loadEvents();
+      }catch(e){
+        // offline fallback
+        t.helpers = t.helpers || [];
+        t.helpers.push(name);
+        closeSignupModal();
+        showToast('Offline: lokal eingetragen');
+        loadEvents();
+      }finally{
+        modalSubmit.disabled = false;
+        modalCancel.disabled = false;
+      }
+    });
+
+    // toast helper
+    const toast = document.getElementById('toast');
+    let toastTimer = null;
+    function showToast(text, ms = 2500){
+      toast.textContent = text;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(()=> toast.classList.remove('show'), ms);
+    }
+  </script>
+</body>
+</html>
+<!-- Cleared by user request: public UI removed -->
