@@ -1,0 +1,52 @@
+:root{
+  --bg:#fff8f3;
+  --card:#ffffff;
+  --accent:#b91c1c; /* festive red */
+  --muted:#6b7280;
+  --shadow: 0 6px 18px rgba(2,6,23,0.08);
+}
+*{box-sizing:border-box}
+body{font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial; background:var(--bg); color:#0f172a;margin:0}
+.site-header{background:linear-gradient(180deg,#fffbf0,transparent);padding:18px 16px;border-bottom:1px solid rgba(15,23,42,0.04)}
+.brand{display:flex;gap:12px;align-items:center}
+.logo{font-size:32px}
+h1{margin:0;font-size:1.1rem}
+.subtitle{margin:0;color:var(--muted);font-size:0.85rem}
+
+.container{padding:16px;max-width:840px;margin:0 auto}
+.card{background:var(--card);padding:12px;border-radius:12px;box-shadow:var(--shadow);margin-bottom:12px}
+
+.events{display:grid;grid-template-columns:1fr;gap:12px}
+.event{padding:12px}
+.event-head{display:flex;flex-direction:column;gap:6px}
+.when{font-size:0.9rem;color:var(--muted)}
+.task{font-weight:700;font-size:1rem}
+.meta{display:flex;justify-content:space-between;color:var(--muted);font-size:0.9rem;margin-top:8px}
+.helpers{color:#0f172a}
+
+.muted{color:var(--muted);font-size:0.9rem}
+
+
+.actions{display:flex;justify-content:flex-end;margin-top:10px}
+.btn{padding:8px 12px;border-radius:10px;border:0;cursor:pointer;font-weight:700}
+.btn.primary{background:var(--accent);color:white}
+
+.site-footer{text-align:center;padding:20px;color:var(--muted);font-size:0.85rem}
+
+@media(min-width:700px){
+  .events{grid-template-columns:repeat(2,1fr)}
+}
+
+/* Modal */
+.modal-backdrop{position:fixed;inset:0;background:rgba(2,6,23,0.5);display:none;align-items:center;justify-content:center;padding:16px;z-index:60}
+.modal{background:var(--card);padding:16px;border-radius:12px;max-width:420px;width:100%;box-shadow:0 10px 30px rgba(2,6,23,0.12)}
+.modal h3{margin:0 0 8px 0}
+.modal .form-row{display:flex;gap:8px;margin-top:8px}
+.modal input[type="text"]{flex:1;padding:8px;border-radius:8px;border:1px solid #e6e6e6}
+.modal .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+.modal-backdrop.show{display:flex}
+
+/* Toast */
+.toast{position:fixed;right:16px;bottom:20px;background:#0f172a;color:white;padding:10px 14px;border-radius:10px;box-shadow:0 8px 20px rgba(2,6,23,0.18);z-index:80;opacity:0;transform:translateY(8px);transition:opacity .25s,transform .25s}
+.toast.show{opacity:1;transform:translateY(0)}
+.btn[disabled]{opacity:0.6;cursor:not-allowed}
